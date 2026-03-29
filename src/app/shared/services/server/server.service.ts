@@ -2,7 +2,7 @@ import { HttpClient } from "@angular/common/http";
 import { Injectable } from "@angular/core";
 import { DeviceInfo, Device } from "@capacitor/device";
 import { getProtectedFieldName } from "data-models";
-import { interval } from "rxjs";
+import { filter, first, interval } from "rxjs";
 import { environment } from "src/environments/environment";
 import { generateTimestamp } from "../../utils";
 import { SyncServiceBase } from "../syncService.base";
@@ -49,13 +49,29 @@ export class ServerService extends SyncServiceBase {
     const { api } = this.deploymentService.config;
     this.syncEnabled = api.enabled;
     if (environment.production) {
-      // run initial sync and create interval timer to sync regularly
-      this.syncUserData();
-      this.syncDBTableData();
-      interval(api.sync_frequency).subscribe(() => {
+      const scheduleIntervalSync = () => {
+        interval(api.sync_frequency || 1000 * 60 * 5).subscribe(() => {
+          this.syncUserData();
+          this.syncDBTableData();
+        });
+      };
+      const startSync = async () => {
+        await this.fetchAndIncrementLoginCount();
         this.syncUserData();
         this.syncDBTableData();
-      });
+        scheduleIntervalSync();
+      };
+      if (this.localStorageService.getString("phone_number")) {
+        startSync();
+      } else {
+        // Wait for registration, then fetch login count from server and sync
+        interval(5000)
+          .pipe(
+            filter(() => !!this.localStorageService.getString("phone_number")),
+            first()
+          )
+          .subscribe(() => startSync());
+      }
     }
   }
 
@@ -73,18 +89,25 @@ export class ServerService extends SyncServiceBase {
       return;
     }
     const { name, _app_builder_version } = this.deploymentService.config;
-    await this.dynamicDataService.ready();
+    // Skip sync until user has registered (phone_number required as stable cross-device ID)
+    const phoneNumber = this.localStorageService.getString("phone_number");
+    if (!phoneNumber) {
+      console.log("[SERVER] sync skipped: user not registered yet");
+      return;
+    }
+    this.app_user_id = phoneNumber;
     if (!this.device_info) {
       this.device_info = await Device.getInfo();
-    }
-    if (!this.app_user_id) {
-      const { identifier: uuid } = await Device.getId();
-      this.app_user_id = uuid;
     }
     console.log("[SERVER] sync data");
     const contact_fields = this.localStorageService.getAll();
 
-    const dynamic_data = await this.dynamicDataService.getState();
+    let dynamic_data = null;
+    try {
+      dynamic_data = await this.dynamicDataService.getState();
+    } catch (e) {
+      console.warn("[SERVER] could not get dynamic data state, syncing without it", e);
+    }
 
     // apply temp timestamp to contact fields to sync as latest
     const timestamp = generateTimestamp();
@@ -126,6 +149,22 @@ export class ServerService extends SyncServiceBase {
           (err) => resolve(null)
         );
     });
+  }
+
+  private async fetchAndIncrementLoginCount() {
+    const phoneNumber = this.localStorageService.getString("phone_number");
+    if (!phoneNumber) return;
+    try {
+      const user = await this.http
+        .get<any>(`/app_users/${phoneNumber}`)
+        .toPromise();
+      const serverCount = parseInt(user?.contact_fields?.["rp-contact-field.login_count"] || "0");
+      this.localStorageService.setString("login_count", String(serverCount + 1));
+    } catch {
+      // Server unreachable: fall back to local count
+      const local = parseInt(this.localStorageService.getString("login_count") || "0");
+      this.localStorageService.setString("login_count", String(local + 1));
+    }
   }
 
   private async syncDBTableData() {

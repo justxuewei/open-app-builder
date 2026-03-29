@@ -1,15 +1,9 @@
 server {
-    # Listen to port 443 on both IPv4 and IPv6.
-    listen 443 ssl default_server reuseport;
-    listen [::]:443 ssl default_server reuseport;
+    listen 80 default_server;
+    listen [::]:80 default_server;
 
     server_name ${SERVER_NAME};
     client_max_body_size 32m;
-
-    ssl_certificate         /etc/letsencrypt/live/${SERVER_NAME}/fullchain.pem;
-    ssl_certificate_key     /etc/letsencrypt/live/${SERVER_NAME}/privkey.pem;
-    ssl_trusted_certificate /etc/letsencrypt/live/${SERVER_NAME}/chain.pem;
-    ssl_dhparam /etc/letsencrypt/dhparams/dhparam.pem;
 
     include includes/locations.conf;
 }

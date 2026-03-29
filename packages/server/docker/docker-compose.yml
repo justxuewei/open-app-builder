@@ -5,22 +5,13 @@ services:
   # Nginx with auto cert generate and renewal
   ####################################################################
   nginx:
-    image: jonasal/nginx-certbot:4.2.1
+    image: nginx:stable
     container_name: plh_webserver
     restart: unless-stopped
     env_file:
       - ../.env
-    environment:
-      - USE_ECDSA=1
-      # Debugging - set to 0 to sign local cert (sometimes required before then signing as 1)
-      # https://github.com/JonasAlfredsson/docker-nginx-certbot/blob/master/docs/good_to_know.md#initial-testing
-      # - USE_LOCAL_CA=1
-      # - STAGING=1
-      # - DEBUG=1
-      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/user_conf.d
     ports:
       - 80:80
-      - 443:443
     networks:
       - webserver_network
     # Limit log sizes and create as a default to be used in other services also
@@ -32,8 +23,8 @@ services:
       # Local nginx conf
       - ./config/nginx/includes:/etc/nginx/includes
       - ./config/nginx/templates:/etc/nginx/templates
-      # Certs populated by certbot
-      - nginx_secrets:/etc/letsencrypt
+      # Frontend app
+      - /var/www/my_website:/var/www/app:ro
   ####################################################################
   # IDEMS Apps API
   ####################################################################
@@ -134,8 +125,8 @@ services:
       - dashboard_data:/metabase-data
     env_file:
       - ../.env
-    # ports:
-    #   - 3000:3000
+    ports:
+      - 3001:3000
     logging: *logging_default
     networks:
       - db_network
