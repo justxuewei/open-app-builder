@@ -176,6 +176,13 @@ const workflows: IDeploymentWorkflows = {
   },
   sync_local: {
     label: "Sync direct edits to local sheets",
+    options: [
+      {
+        flags: "-w, --watch",
+        description: "Watch for file changes after initial sync",
+        defaultValue: false,
+      },
+    ],
     steps: [
       {
         name: "sync_local",
@@ -183,6 +190,7 @@ const workflows: IDeploymentWorkflows = {
       },
       {
         name: "watch_changes",
+        condition: async ({ options }) => options.watch === true,
         function: async (context) =>
           context.tasks.file.watchFolder({
             src: [context.config.local_drive.assets_path, context.config.local_drive.sheets_path],
